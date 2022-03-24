@@ -5,6 +5,7 @@ Process, Priority, , BelowNormal
 SendMode Input  ; Recommended for new scripts due to its superior speed and reliability.
 SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
 FileEncoding, UTF-8
+Gui, Font, , "Lucida Console"
 
 SteamPath := "C:\Program Files (x86)\Steam"
 DefaultKeywords := ["Steam", "Riot", "Origin", "Battle"]
@@ -31,9 +32,20 @@ AutoStartFile := A_StartUp . "\" . ScriptName . ".lnk"
 
 InitialRun := false
 Notified := false
+PollTime := ""
 InclusionKeywords := Array()
 AdditionalKeywords := Array()
 SteamPaths := Array()
+
+	Hotkey, ^!P, Unpause
+	/*
+	FileDelete, % (A_AppData . "\" . ScriptName . ".txt")
+	NestObject2 := {"Haha test lul": "drölf", "Hilfe?":"maybe?"}
+	NestObject1 := Object("Property1", 5, "prop2", 10, "NestObject2", NestObject2)
+	TestObject := {"Value": false, "NestObj", NestObject1, "Keywords", DefaultKeywords )
+	FileAppend, % ExploreObj(TestObject) . "`n`n`nOwn:`n", % (A_AppData . "\" . ScriptName . ".txt")
+	FileAppend, % ObjectToString(TestObject), % (A_AppData . "\" . ScriptName . ".txt")
+	*/
 
 Gosub ConfigRead
 
@@ -59,10 +71,11 @@ if (GetFromSteam) {
 Hotkey, $<!F4, HahaNo, Off
 Hotkey, $<^>!F4, DoIt, On
 
-SetTimer, main, 1000
+;SetTimer, main, 1000
 
 Gosub SetUpdateStatusIcon
 
+ListLines, Off
 while (1>0) {
 	; NOP
 	sleep, 2000
@@ -71,27 +84,47 @@ MsgBox, ERROR: We were not supposed to get to this point....`nScript will exit.
 ExitApp
 
 
+; TODO: Replace Labels with functions:
+/*
+https://riptutorial.com/autohotkey/4062/use-functions-instead-of-labels
+
+XYEvent(CtrlHwnd:=0, GuiEvent:="", EventInfo:="", ErrLvl:="") {
+	GuiControlGet, controlName, Name, %CtrlHwnd%
+	GuiControlGet, EditField
+	MsgBox, %controlName% has been clicked
+	MsgBox, Content is %EditField%
+}
+
+GuiClose(hWnd) {
+	
+}
+
+*/
+
 main:
 	WinGet, WinPath, ProcessPath, A
+	ListLines, Off
 	HasWord := false
-	For i, KeyWord in InclusionKeywords
+	For integerVar, KeyWord in InclusionKeywords
 	{
 		HasWord := HasWord || InStr(WinPath, KeyWord, false)
 		if HasWord {
 			break
 		}
 	}
+	ListLines, On
 	if HasWord {
 		Hotkey, <!F4, On
-		sleep, 5000
+		SetTimer, main, 5000
 	} else {
 		Hotkey, <!F4, Off
+		SetTimer, main, 1000
 	}
-	;Pause
 	Return
 
 GuiCreator:
 	if NOT (MenuCreated) {
+		ListLines, Off
 		;Menu, TrayMenu, NoStandard ; Remove AHK Tray Menu entries
 		Menu, Tray, Add, Configure
 		Menu, Tray, Default, Configure
@@ -112,11 +145,14 @@ GuiCreator:
 		Menu, OptionMenuBar, Add, Updater, ShowUpdater, +Right
 		Menu, OptionMenuBar, Add, % ("v" . ScriptVersion), OpenHomePage, +Right
 		
-		ChangeLog := GetChangeLog(GHUser, ScriptName, 2)
+		ChangeLog := ""
 		SetTimer, SetUpdateStatusIcon, % (1000 * 60 * 30) ; Run every 30 mins
+		ListLines, On
 		MenuCreated := true
 	}
 	
+	ListLines, Off
+	Gui, Updater:Font, , "Lucida Console"
 	Gui, Updater:New, +Border +Caption +DPIScale -Resize, % (ScriptName . " updater")
 	Gui, Updater:Add, GroupBox, x2 y0 w380 h140, Changelog:
 	Gui, Updater:Add, Edit, x12 y19 r8 vChangeLog w360 +ReadOnly +Wrap, % ChangeLog
@@ -133,6 +169,7 @@ GuiCreator:
 	Gui, Options:Add, CheckBox, x12 y99 r1 vShowSettings Checked%ShowSettings%, Show options again?
 	Gui, Options:Add, Button, x200 y98 w80 h20 gResetOptions, Default
 	Gui, Options:Add, Button, x300 y98 w80 h20 gGuiSave, Save
+	ListLines, On
 	Gui, Options:Menu, OptionMenuBar
 	; Generated using (also) SmartGUI Creator 4.0
 	Return
@@ -183,7 +220,7 @@ Configure:
 	Gui, Updater:Destroy
 	Gosub GuiCreator
 	Gui, Options:Show, Center AutoSize, % (ScriptName . "options")
-	Loop 6 {
+	Loop 3 {
 		Gui Flash
 		Sleep 500
 	}
@@ -237,18 +274,26 @@ ReadSteamLibs:
 	LibFileContent := SteamLibFile.Read()
 	Loop, Parse, % LibFileContent, "`n`r", " `t"
 	{
-		Temp := Array()
-		FoundPos := InStr(A_LoopField, "" . "path" . "", true, 1)
-		if (FoundPos != 0) {
-			Temp := StrSplit(A_LoopField, " `t", "" . " `t", 2)
-			SteamPaths.Push(Temp[2])
-			InclusionKeywords.Push(Temp[2])
-		}
+		ListLines, Off
+		PathRegex := "O)(?<=""path""\t\t)"".+"""
+		RegExMatch(A_LoopField, PathRegex, FoundPos)
+		Path := RegExReplace(FoundPos.Value, "\\", "\")
+		SteamPaths.Push(Path)
+		InclusionKeywords.Push(Path)
 	}
+	ListLines, On
 	Return
 
 Stop:
 	ExitApp
+
+Unpause:
+	Pause, Toggle
+	WinGet, WinPath, ProcessPath, A
+	if (InStr(WinPath, "AutoHotkey")) {
+		Send {F5}
+	}
+	Return
 
 HahaNo:
 	MsgBox, No.
@@ -258,12 +303,103 @@ DoIt:
 	SendInput !{F4}
 	Return
 
-ArrayJoin( strArray )
-{
+ArrayJoin( strArray ) {
 	Str := strArray[1]
 	for Counter, Entry in strArray
 		Str := Str . ", " . Entry
 	return Str
+}
+
+FormatList(Obj, IndentDepth:=0, IndentChar:="`t") {
+	/*
+		Written by https://github.com/Chaos02
+		License: GPL-3.0
+		Accepts: An ahk object/obj-based-array and how "deep" to pad with IndentChar
+		Returns: A block string, resembling a list, with optional padding on the left. Powershell style.
+	*/
+	MaxKeyLen := 0
+	MaxValLen := 0
+	For key, val in Obj
+	{
+		tmp := StrLen(key)
+		if (tmp > MaxKeyLen) {
+			MaxKeyLen := tmp
+		}
+		tmp := StrLen(val)
+		if (tmp > MaxValLen) {
+			MaxValLen := tmp
+		}
+	}
+	
+	Indent :=
+	while (StrLen(Indent) < (IndentDepth * StrLen(IndentChar))) {
+		Indent := Indent . IndentChar
+	}
+	
+	FList := Indent
+	For key, val in Obj
+	{
+		FList := FList . StringPad(key, MaxKeyLen) . " : " . StringPad(val, MaxValLen, "L") . "`n" . Indent
+	}
+	FList := RegExReplace(FList, ")\s*$") ;Removes last newline + whitespaces TODO: maybe also indentation...
+	Return FList
+}
+
+StringPad(Str, n, side:="R", char:=" ", MaxStrLen:=40) {
+	/*
+		Written by https://github.com/Chaos02
+		License: GPL-3.0
+		Accepts: A string which is to be padded up to n with char and a MaxStrLen.
+		Returns: A char padded string.
+		Meant to be used with a Monospace font. all characters need to be the same width.
+	*/
+	if (StrLen(Str) > MaxStrLen) {
+		Str := SubStr(Str, 1, ((MaxStrLen // 2) - 1 )) . "..." . SubStr(Str, ((MaxStrLen // 2) + 3))
+	}
+	Switch side {
+		Case "R":
+			while (StrLen(Str) < n) {
+			Str := Str . char
+			}
+		Case "L":
+			while (StrLen(Str) < n) {
+			Str := char . Str
+			}
+		Case "B":
+			while (StrLen(Str) < n) {
+			Str := char . Str . char
+			}
+			Str := SubStr(Str, 1, n)
+	}
+	Return Str
+}
+
+ObjectToString(Obj, ObjDepth:=0, IndentChar:="`t") {
+	ObjString := Obj.Name
+	/*
+	if (ObjDepth < 1) {
+		Tmp := Object()
+		Tmp.Push(Obj*)
+		ObjString := %A_ThisFunc%(Tmp, ObjDepth + 1, IndentChar)
+		Tmp :=
+	}
+	*/
+	ObjDepth++
+	Tmp := Object()
+	For key, val in Obj
+	{
+		key := RegExReplace(key, "\R", "``n``r")
+		key := RegExReplace(key, "\t", "``t")
+		if IsObject(val) {
+			ObjString := ObjString . FormatList(Object(key, ""), ObjDepth, IndentChar) . "`n" . %A_ThisFunc%(val, ObjDepth, IndentChar)
+		} else {
+			val := RegExReplace(val, "\R", "``n``r")
+			val := RegExReplace(val, "\t", "``t")
+			Tmp[key] := val ; Adds all properties to tmp associative array for FormatList()
+		}
+	}
+	ObjString := ObjString . "`n" . FormatList(Tmp, ObjDepth, IndentChar)
+	Return ObjString
 }
 
 ReadLine(StringVar, LineNumber)
@@ -273,58 +409,25 @@ ReadLine(StringVar, LineNumber)
 	{
 		StringPerLine[A_Index] := A_LoopField
 	}
-	Return StringPerLine[LineNumber]
-}
-
-ReadMDHTML(HtmlStr, ContentTags := ["h1", "h2", "h3", "h4", "h5", "h6", "a", "p"])
-{
-	;TODO: each <h1/> tag that has an <a/> tag is headline. there can be multiple <p/> per release.
-	;Extracts the content from an HTML string
-	j := 1
-	Content := Array()
-	while j <= StrLen(HtmlStr)
-	{
-		if (SubStr(HtmlStr, j, 1) == "<") {
-			HasContent := false
-			TagType :=
-			For j2, Tag in ContentTags
-			{
-				HasContent := HasContent || InStr(SubStr(HtmlStr, j+1, 2), Tag, false)
-				if HasWord {
-					TagType := Tag
-					break
-				}
-			}
-			if HasContent {
-				;Find next closing tag
-				while (SubStr(HtmlStr, j, 1) != ">") ; should always be a '">'???
-				{
-					j++
-				}
-				;Read Content of Tag.
-				while NOT InStr(SubStr(HtmlStr, j+1, 5), "</" . TagType . ">")
-				{
-					Content.Push(SubStr(HtmlStr, j, 1))
-				}
-			}
-		}
+	if (LineNumber == "*") {
+		Return StringPerLine
+	} else {
+		Return StringPerLine[LineNumber]
 	}
-	;RegExMatch(HtmlStr, "iO)(?<=\<)[^ 	]+", Tag) ; Creates a Match object in Tag
-	
-	Return Content
 }
 
 ShowStartup:
 	Run, % ("properties " . AutoStartFile)
 	Return
 
-CheckUpdate(localVersion, GitHubUser, repoName, versionControl)
+CheckUpdate(localVersion, GitHubUser, repoName, versionControl, branch:="main")
 {
 	; Seperate thread?
 	Global MenuCreated
-	if NOT (MenuCreated) {
+	if (MenuCreated) {
 		WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-		WebRequest.Open("GET", "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . versionControl, true)
+		URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/"versionControl
+		WebRequest.Open("GET", URL, true)
 		WebRequest.Send()
 		WebRequest.WaitForResponse()
 		UpStreamVersion := WebRequest.ResponseText
@@ -342,20 +445,20 @@ SetUpdateStatusIcon:
 	UpdateStatus := CheckUpdate(ScriptVersion, GHUser, ScriptName, "version")
 	Menu, OptionMenuBar, Rename, 2&, Updater
 	Switch UpdateStatus {
-		Case true:
+		Case 1:
 		Menu, OptionMenuBar, Icon, Updater, Shell32.dll, 147, 16 ;Update icon
-		Menu, Tray, Tip, % (ScriptName . " update available")
+		Menu, Tray, Tip, % (ScriptName . "`nUpdate available!")
 		if NOT (Notified) {
 			TrayTip, % (ScriptName . " Updater"), An Update is available!`nDownload it through the Updater Gui!, 5
 			Notified := true
 		}
-		Case 0:
+		Case false:
 			Menu, Tray, Tip, % ScriptName
 			Menu, OptionMenuBar, Icon, Updater, ; Or Update circle icon
 		Default:
-			Menu, Tray, Tip, % (ScriptName . " Updater ERROR: " . UpdateStatus)
+			Menu, Tray, Tip, % (ScriptName . "`nUpdater ERROR: " . UpdateStatus)
 			Menu, OptionMenuBar, Icon, Updater, Shell32.dll, 128, 16 ;RedCross icon
-			Menu, OptionMenuBar, Rename, 2&, % ("Updater error: " . UpdateStatus)
+			Menu, OptionMenuBar, Rename, 2&, % ("Updater (error: " . UpdateStatus . ")")
 			; Display ErrorLevel somehow?
 	}
 	Return
@@ -364,6 +467,7 @@ ShowUpdater:
 	Gui, Updater:Show, Center AutoSize, % (ScriptName . "updater")
 	
 	; TODO: Fix Parenting...?
+	Gosub UpdateRefresh
 	
 	Gui, Updater:+OwnDialogs
 	Gui, Options:+OwnerUpdater
@@ -376,87 +480,471 @@ UpdaterGuiClose:
 	Return
 
 UpdateRefresh:
+	;SetCursor("WAIT")	;mostly gets stuck.... >:/
 	Gosub SetUpdateStatusIcon
-	ChangeLog := GetChangeLog(GHUser, ScriptName, 2)
+	ChangeLog := GetChangeLog(GHUser, ScriptName, 3)
 	GuiControl, , ChangeLog, % ChangeLog
+	;SetCursor("ARROW")
 	Return
 
-GetChangeLog(GitHubUser, repoName, ChangeLogDepth) {
-	; DEBUG:
-		repoName := "SubFolderLoader"
+SetCursor(CursorName := "ARROW", ReplacedCursor := "ARROW") {
+	;Replace ReplacedCursor with CursorName
+	; https://www.autohotkey.com/board/topic/32608-changing-the-system-cursor/
 	
-	Global MenuCreated
-	if (MenuCreated) {
+	StringUpper, CursorName, CursorName
+	StringUpper, ReplacedCursor, ReplacedCursor
+	
+	Global Replacor
+	Global Replaced
+	
+	Cursors := Object("ARROW"	, 32512
+				,"IBEAM"		, 32513
+				,"WAIT"			, 32514
+				,"CROSS"		, 32515
+				,"UPARROW"		, 32516
+				,"SIZE"			, 32640
+				,"ICON"			, 32641
+				,"SIZENWSE"		, 32642
+				,"SIZENESW"		, 32643
+				,"SIZEWE"		, 32644
+				,"SIZENS"		, 32645
+				,"SIZEALL"		, 32646
+				,"NO"			, 32648
+				,"HAND"			, 32649
+				,"APPSTARTING"	, 32650
+				,"HELP"			, 32651)
+	
+	Replacor := Cursors[CursorName]
+	Replaced := Cursors[ReplacedCursor]
+	
+	CursorHandle := DllCall( "LoadCursor", Uint,0, Int, Replacor )
+	DllCall( "SetSystemCursor", Uint, CursorHandle, Int, Replaced )
+	Return ErrorLevel
+	;Reload system cursors (Restore)
+	;SPI_SETCURSORS := 0x57
+	;DllCall( "SystemParametersInfo", UInt,SPI_SETCURSORS, UInt,0, UInt,0, UInt,0 )
+}
+
+GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=false) {
+	Global PollTime
+	if (Init) {
+		;CreateFormData(ReleasesRaw, ReleasesHeader, requestQuery)
+		URL := "https://api.github.com/repos/" . GitHubUser . "/" . repoName . "/releases?page=1&per_page=" . ChangeLogDepth
 		WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-		
-		WebRequest.Open("GET", "https://github.com/" . GitHubUser . "/" . repoName . "/releases", true)
+		; true for asynchronously, false for synchronously. Async lets Send wait for response
+		WebRequest.Open("GET", URL, false)
+		WebRequest.SetRequestHeader("Accept", "application/json;q=1.0,text/plain;q=0.1")
+		WebRequest.SetRequestHeader("If-Modified-Since", PollTime)
 		WebRequest.Send()
 		
-		WebRequest.WaitForResponse()
-		ReleasesRaw := WebRequest.ResponseText
+		TimeOut := WebRequest.WaitForResponse(5)
 		
-		ReleasesRaw := StrReplace(ReleasesRaw, "<h1>", "ª") ; one of "¢¤¥¦§©ª«®µ¶"
-		ReleaseHeadlines := Array()
-		ReleaseNotes := Array()
-		Loop, Parse, ReleasesRaw, "`n`r"
-		{
-			IsInStr := InStr(A_LoopField, "ª", true, 1)
-			if (IsInStr) {
-				ReleaseHeadlines[A_Index] := ReadMDHTML(ReadLine(ReleasesRaw, A_Index), ["h1"])
-				ReleaseNotes[A_Index] := "`t" . ReadMDHTML(ReadLine(ReleasesRaw, A_Index + 1), ["p"])
+		if (TimeOut != "VARIANT_FALSE") { ;if NOT TimeOut
+			RespHeaders := WebRequest.GetAllResponseHeaders()
+			ContentType := RegExReplace(WebRequest.GetResponseHeader("Content-Type"), "i);\s+charset=utf-8", , , 1)
+			PollTime := WebRequest.GetResponseHeader("date")
+			ChangeLogRateUsed := WebRequest.GetResponseHeader("x-ratelimit-remaining")
+			
+			Switch ContentType {
+				Case "application/json":
+					ReleasesRaw := WebRequest.ResponseText
+					
+					;Parse Json
+					Releases := JSON.Load(ReleasesRaw)
+					NetChangeLog := ""
+					
+					if (WebRequest.GetResponseHeader("x-ratelimit-remaining") == 0) {
+						NetChangeLog := "REQUEST LIMIT REACHED. Try again later.`n"
+					}
+					
+					For i, release in Releases
+					{
+						ReleaseChangeLog := release.name
+						ReleaseChangeLog .= StringPad(release.tag_name, (85 - StrLen(release.name)), "L")
+						release.body := RegExReplace(release.body, "\R+", "`n")
+						
+						ReleaseBodyBlock := "   "
+						For key, val in ReadLine(release.body, "*")
+						{
+							ReleaseBodyBlock .= val . "`n" . "   "
+						}
+						ReleaseBodyBlock := RegExReplace(ReleaseBodyBlock, ")\s*$")
+						
+						ReleaseChangeLog .= "`n" . ReleaseBodyBlock
+						NetChangeLog := NetChangeLog . "`n`n" . ReleaseChangeLog
+					}
+				Default:
+					NetChangeLog := "Unexpected Content-Type: " . ContentType . "`n" . WebRequest.ResponseText
 			}
+			NetChangeLog := Trim(NetChangeLog, "`r`n`t ")
+		} else {
+			NetChangeLog := "http request timed out."
 		}
-		NetChangeLog :=
-		;i := ReleaseHeadlines.Length()
-		;While (i--)
-		For j in ReleaseHeadlines
-		{
-			if NOT (j > ChangeLogDepth) {
-				NetChangeLog := NetChangeLog . "`n" . ReleaseHeadlines[j]
-				ReleaseNotes[j] := StrReplace(ReleaseNotes[j], "`n", "`n`t")
-				NetChangeLog := NetChangeLog . "`n`t" . ReleaseNotes[j]
-			} else {
-				break
-			}
-		}
-		; NetChangeLog := ReleasesRaw
 	} else {
-		NetChangeLog := "Press Refresh to get the ChangeLog."
+		NetChangeLog := "`n`nPress >Refresh< to get the ChangeLog."
 	}
 	Return NetChangeLog
 }
 
 AutoUpdater:
-	AutoUpdater(GHUser, ScriptName, "version")
+	AutoUpdater(ScriptVersion, GHUser, ScriptName, "version")
 	Return
 
-AutoUpdater(GitHubUser, repoName, versionControl)
+AutoUpdater(currentVersion, GitHubUser, repoName, versionControl, branch:="main")
 {
 	/*
 		AutoHotkey Version 1.1.30.00
 		by mshall on AHK forums, Github.com/MattAHK
 		free for use, adapted by Chaos_02
+		TODO: Get latest release!
 	*/
 	
 	url := "https://github.com/" . GitHubUser . "/" . repoName . "/releases/latest/download/"
 	
 	WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-	WebRequest.Open("GET", "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . versionControl, true)
+	URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/"versionControl
+	WebRequest.Open("GET", URL, true)
 	WebRequest.Send()
 	
 	WebRequest.WaitForResponse()
 	UpStreamVersion := WebRequest.ResponseText
-	if (Version != UpStreamVersion) {
-		MsgBox, 1, % (repoName . " Updater"), Your current version is %Version%.`nLatest is %UpStreamVersion%.`nPress OK to download.
+	if (currentVersion != UpStreamVersion) {
+		MsgBox, 1, % (repoName . " Updater"), % "Your current version is: " . currentVersion . ".`nLatest is: " . Trim(UpStreamVersion, "`r`n`t ") . ".`nPress OK to download."
 		IfMsgBox, OK
 		{
-			URLDownloadToFile, *0 %url%, A_ScriptPath . "\.tmp-" . A_ScripName
+			URLDownloadToFile, *0 %URL%, A_ScriptPath . "\.tmp-" . A_ScripName
 			if (ErrorLevel == 0) {
-			
+				;Overwrite A_ScriptFullPath
+				Run, A_ScriptFullPath
+				ExitApp
 			} else {
-				MsgBox, 1, An error has occured while downloading.`nCode: %ErrorLevel%
+				MsgBox, % "An error has occured while downloading.`nCode: " . ErrorLevel
 			}
 		}
 	}
 	Return
+}
+
+
+;; Libraries
+
+/**
+ * Lib: JSON.ahk
+ *     JSON lib for AutoHotkey.
+ * Version:
+ *     v2.1.3 [updated 04/18/2016 (MM/DD/YYYY)]
+ * License:
+ *     WTFPL [http://wtfpl.net/]
+ * Requirements:
+ *     Latest version of AutoHotkey (v1.1+ or v2.0-a+)
+ * Installation:
+ *     Use #Include JSON.ahk or copy into a function library folder and then
+ *     use #Include <JSON>
+ * Links:
+ *     GitHub:     - https://github.com/cocobelgica/AutoHotkey-JSON
+ *     Forum Topic - http://goo.gl/r0zI8t
+ *     Email:      - cocobelgica <at> gmail <dot> com
+ */
+/**
+ * Class: JSON
+ *     The JSON object contains methods for parsing JSON and converting values
+ *     to JSON. Callable - NO; Instantiable - YES; Subclassable - YES;
+ *     Nestable(via #Include) - NO.
+ * Methods:
+ *     Load() - see relevant documentation before method definition header
+ *     Dump() - see relevant documentation before method definition header
+ */
+class JSON
+{
+	/**
+	 * Method: Load
+	 *     Parses a JSON string into an AHK value
+	 * Syntax:
+	 *     value := JSON.Load( text [, reviver ] )
+	 * Parameter(s):
+	 *     value      [retval] - parsed value
+	 *     text    [in, ByRef] - JSON formatted string
+	 *     reviver   [in, opt] - function object, similar to JavaScript's
+	 *                           JSON.parse() 'reviver' parameter
+	 */
+	class Load extends JSON.Functor
+	{
+		Call(self, ByRef text, reviver:="")
+		{
+			this.rev := IsObject(reviver) ? reviver : false
+		; Object keys(and array indices) are temporarily stored in arrays so that
+		; we can enumerate them in the order they appear in the document/text instead
+		; of alphabetically. Skip if no reviver function is specified.
+			this.keys := this.rev ? {} : false
+			static quot := Chr(34), bashq := "\" . quot
+			     , json_value := quot . "{[01234567890-tfn"
+			     , json_value_or_array_closing := quot . "{[]01234567890-tfn"
+			     , object_key_or_object_closing := quot . "}"
+			key := ""
+			is_key := false
+			root := {}
+			stack := [root]
+			next := json_value
+			pos := 0
+			while ((ch := SubStr(text, ++pos, 1)) != "") {
+				if InStr(" `t`r`n", ch)
+					continue
+				if !InStr(next, ch, 1)
+					this.ParseError(next, text, pos)
+				holder := stack[1]
+				is_array := holder.IsArray
+				if InStr(",:", ch) {
+					next := (is_key := !is_array && ch == ",") ? quot : json_value
+				} else if InStr("}]", ch) {
+					ObjRemoveAt(stack, 1)
+					next := stack[1]==root ? "" : stack[1].IsArray ? ",]" : ",}"
+				} else {
+					if InStr("{[", ch) {
+					; Check if Array() is overridden and if its return value has
+					; the 'IsArray' property. If so, Array() will be called normally,
+					; otherwise, use a custom base object for arrays
+						static json_array := Func("Array").IsBuiltIn || ![].IsArray ? {IsArray: true} : 0
+					; sacrifice readability for minor(actually negligible) performance gain
+						(ch == "{")
+							? ( is_key := true
+							  , value := {}
+							  , next := object_key_or_object_closing )
+						; ch == "["
+							: ( value := json_array ? new json_array : []
+							  , next := json_value_or_array_closing )
+						ObjInsertAt(stack, 1, value)
+						if (this.keys)
+							this.keys[value] := []
+					} else {
+						if (ch == quot) {
+							i := pos
+							while (i := InStr(text, quot,, i+1)) {
+								value := StrReplace(SubStr(text, pos+1, i-pos-1), "\\", "\u005c")
+								static tail := A_AhkVersion<"2" ? 0 : -1
+								if (SubStr(value, tail) != "\")
+									break
+							}
+							if (!i)
+								this.ParseError("'", text, pos)
+							  value := StrReplace(value,  "\/",  "/")
+							, value := StrReplace(value, bashq, quot)
+							, value := StrReplace(value,  "\b", "`b")
+							, value := StrReplace(value,  "\f", "`f")
+							, value := StrReplace(value,  "\n", "`n")
+							, value := StrReplace(value,  "\r", "`r")
+							, value := StrReplace(value,  "\t", "`t")
+							pos := i ; update pos
+							i := 0
+							while (i := InStr(value, "\",, i+1)) {
+								if !(SubStr(value, i+1, 1) == "u")
+									this.ParseError("\", text, pos - StrLen(SubStr(value, i+1)))
+								uffff := Abs("0x" . SubStr(value, i+2, 4))
+								if (A_IsUnicode || uffff < 0x100)
+									value := SubStr(value, 1, i-1) . Chr(uffff) . SubStr(value, i+6)
+							}
+							if (is_key) {
+								key := value, next := ":"
+								continue
+							}
+						} else {
+							value := SubStr(text, pos, i := RegExMatch(text, "[\]\},\s]|$",, pos)-pos)
+							static number := "number", integer :="integer"
+							if value is %number%
+							{
+								if value is %integer%
+									value += 0
+							}
+							else if (value == "true" || value == "false")
+								value := %value% + 0
+							else if (value == "null")
+								value := ""
+							else
+							; we can do more here to pinpoint the actual culprit
+							; but that's just too much extra work.
+								this.ParseError(next, text, pos, i)
+							pos += i-1
+						}
+						next := holder==root ? "" : is_array ? ",]" : ",}"
+					} ; If InStr("{[", ch) { ... } else
+					is_array? key := ObjPush(holder, value) : holder[key] := value
+					if (this.keys && this.keys.HasKey(holder))
+						this.keys[holder].Push(key)
+				}
+			} ; while ( ... )
+			return this.rev ? this.Walk(root, "") : root[""]
+		}
+		ParseError(expect, ByRef text, pos, len:=1)
+		{
+			static quot := Chr(34), qurly := quot . "}"
+			line := StrSplit(SubStr(text, 1, pos), "`n", "`r").Length()
+			col := pos - InStr(text, "`n",, -(StrLen(text)-pos+1))
+			msg := Format("{1}`n`nLine:`t{2}`nCol:`t{3}`nChar:`t{4}"
+			,     (expect == "")     ? "Extra data"
+			    : (expect == "'")    ? "Unterminated string starting at"
+			    : (expect == "\")    ? "Invalid \escape"
+			    : (expect == ":")    ? "Expecting ':' delimiter"
+			    : (expect == quot)   ? "Expecting object key enclosed in double quotes"
+			    : (expect == qurly)  ? "Expecting object key enclosed in double quotes or object closing '}'"
+			    : (expect == ",}")   ? "Expecting ',' delimiter or object closing '}'"
+			    : (expect == ",]")   ? "Expecting ',' delimiter or array closing ']'"
+			    : InStr(expect, "]") ? "Expecting JSON value or array closing ']'"
+			    :                      "Expecting JSON value(string, number, true, false, null, object or array)"
+			, line, col, pos)
+			static offset := A_AhkVersion<"2" ? -3 : -4
+			throw Exception(msg, offset, SubStr(text, pos, len))
+		}
+		Walk(holder, key)
+		{
+			value := holder[key]
+			if IsObject(value) {
+				for i, k in this.keys[value] {
+					; check if ObjHasKey(value, k) ??
+					v := this.Walk(value, k)
+					if (v != JSON.Undefined)
+						value[k] := v
+					else
+						ObjDelete(value, k)
+				}
+			}
+			return this.rev.Call(holder, key, value)
+		}
+	}
+	/**
+	 * Method: Dump
+	 *     Converts an AHK value into a JSON string
+	 * Syntax:
+	 *     str := JSON.Dump( value [, replacer, space ] )
+	 * Parameter(s):
+	 *     str        [retval] - JSON representation of an AHK value
+	 *     value          [in] - any value(object, string, number)
+	 *     replacer  [in, opt] - function object, similar to JavaScript's
+	 *                           JSON.stringify() 'replacer' parameter
+	 *     space     [in, opt] - similar to JavaScript's JSON.stringify()
+	 *                           'space' parameter
+	 */
+	class Dump extends JSON.Functor
+	{
+		Call(self, value, replacer:="", space:="")
+		{
+			this.rep := IsObject(replacer) ? replacer : ""
+			this.gap := ""
+			if (space) {
+				static integer := "integer"
+				if space is %integer%
+					Loop, % ((n := Abs(space))>10 ? 10 : n)
+						this.gap .= " "
+				else
+					this.gap := SubStr(space, 1, 10)
+				this.indent := "`n"
+			}
+			return this.Str({"": value}, "")
+		}
+		Str(holder, key)
+		{
+			value := holder[key]
+			if (this.rep)
+				value := this.rep.Call(holder, key, ObjHasKey(holder, key) ? value : JSON.Undefined)
+			if IsObject(value) {
+			; Check object type, skip serialization for other object types such as
+			; ComObject, Func, BoundFunc, FileObject, RegExMatchObject, Property, etc.
+				static type := A_AhkVersion<"2" ? "" : Func("Type")
+				if (type ? type.Call(value) == "Object" : ObjGetCapacity(value) != "") {
+					if (this.gap) {
+						stepback := this.indent
+						this.indent .= this.gap
+					}
+					is_array := value.IsArray
+				; Array() is not overridden, rollback to old method of
+				; identifying array-like objects. Due to the use of a for-loop
+				; sparse arrays such as '[1,,3]' are detected as objects({}). 
+					if (!is_array) {
+						for i in value
+							is_array := i == A_Index
+						until !is_array
+					}
+					str := ""
+					if (is_array) {
+						Loop, % value.Length() {
+							if (this.gap)
+								str .= this.indent
+							v := this.Str(value, A_Index)
+							str .= (v != "") ? v . "," : "null,"
+						}
+					} else {
+						colon := this.gap ? ": " : ":"
+						for k in value {
+							v := this.Str(value, k)
+							if (v != "") {
+								if (this.gap)
+									str .= this.indent
+								str .= this.Quote(k) . colon . v . ","
+							}
+						}
+					}
+					if (str != "") {
+						str := RTrim(str, ",")
+						if (this.gap)
+							str .= stepback
+					}
+					if (this.gap)
+						this.indent := stepback
+					return is_array ? "[" . str . "]" : "{" . str . "}"
+				}
+			} else ; is_number ? value : "value"
+				return ObjGetCapacity([value], 1)=="" ? value : this.Quote(value)
+		}
+		Quote(string)
+		{
+			static quot := Chr(34), bashq := "\" . quot
+			if (string != "") {
+				  string := StrReplace(string,  "\",  "\\")
+				; , string := StrReplace(string,  "/",  "\/") ; optional in ECMAScript
+				, string := StrReplace(string, quot, bashq)
+				, string := StrReplace(string, "`b",  "\b")
+				, string := StrReplace(string, "`f",  "\f")
+				, string := StrReplace(string, "`n",  "\n")
+				, string := StrReplace(string, "`r",  "\r")
+				, string := StrReplace(string, "`t",  "\t")
+				static rx_escapable := A_AhkVersion<"2" ? "O)[^\x20-\x7e]" : "[^\x20-\x7e]"
+				while RegExMatch(string, rx_escapable, m)
+					string := StrReplace(string, m.Value, Format("\u{1:04x}", Ord(m.Value)))
+			}
+			return quot . string . quot
+		}
+	}
+	/**
+	 * Property: Undefined
+	 *     Proxy for 'undefined' type
+	 * Syntax:
+	 *     undefined := JSON.Undefined
+	 * Remarks:
+	 *     For use with reviver and replacer functions since AutoHotkey does not
+	 *     have an 'undefined' type. Returning blank("") or 0 won't work since these
+	 *     can't be distnguished from actual JSON values. This leaves us with objects.
+	 *     Replacer() - the caller may return a non-serializable AHK objects such as
+	 *     ComObject, Func, BoundFunc, FileObject, RegExMatchObject, and Property to
+	 *     mimic the behavior of returning 'undefined' in JavaScript but for the sake
+	 *     of code readability and convenience, it's better to do 'return JSON.Undefined'.
+	 *     Internally, the property returns a ComObject with the variant type of VT_EMPTY.
+	 */
+	Undefined[]
+	{
+		get {
+			static empty := {}, vt_empty := ComObject(0, &empty, 1)
+			return vt_empty
+		}
+	}
+	class Functor
+	{
+		__Call(method, ByRef arg, args*)
+		{
+		; When casting to Call(), use a new instance of the "function object"
+		; so as to avoid directly storing the properties(used across sub-methods)
+		; into the "function object" itself.
+			if IsObject(method)
+				return (new this).Call(method, arg, args*)
+			else if (method == "")
+				return (new this).Call(arg, args*)
+		}
+	}
 }
