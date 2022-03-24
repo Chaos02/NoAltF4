@@ -32,7 +32,7 @@ AutoStartFile := A_StartUp . "\" . ScriptName . ".lnk"
 
 InitialRun := false
 Notified := false
-PollTime := ""
+lastETag := "W/ack"
 InclusionKeywords := Array()
 AdditionalKeywords := Array()
 SteamPaths := Array()
@@ -112,11 +112,13 @@ main:
 			break
 		}
 	}
-	ListLines, On
+
 	if HasWord {
+		ListLines, On
 		Hotkey, <!F4, On
 		SetTimer, main, 5000
 	} else {
+		ListLines, On
 		Hotkey, <!F4, Off
 		SetTimer, main, 1000
 	}
@@ -156,7 +158,7 @@ GuiCreator:
 	Gui, Updater:New, +Border +Caption +DPIScale -Resize, % (ScriptName . " updater")
 	Gui, Updater:Add, GroupBox, x2 y0 w380 h140, Changelog:
 	Gui, Updater:Add, Edit, x12 y19 r8 vChangeLog w360 +ReadOnly +Wrap, % ChangeLog
-	Gui, Updater:Add, Button, x100 y150 w80 h20 gUpdateRefresh, Refresh
+	Gui, Updater:Add, Button, x100 y150 w80 h20 gUpdaterRefresh, Refresh
 	Gui, Updater:Add, Button, x200 y150 w80 h20 gAutoUpdater, Update
 	Gui, Updater:Add, Button, x300 y150 w80 h20 gUpdaterGuiClose, Close
 	
@@ -238,6 +240,7 @@ EditChange:
 	Return
 
 GuiSave:
+	ListLines, On
 	Gui, Options:Submit, NoHide
 	AdditionalKeywords := Array()
 	AdditionalKeywords := StrSplit(KeywordsRaw, ",", " `t")
@@ -254,6 +257,7 @@ MoreOpts:
 	Return
 
 OptionsGuiClose:
+	ListLines, On
 	Gui, Options:Hide
 	Return
 
@@ -296,18 +300,20 @@ Unpause:
 	Return
 
 HahaNo:
+	ListLines, On
 	MsgBox, No.
 	Return
 
 DoIt:
+	ListLines, On
 	SendInput !{F4}
 	Return
 
-ArrayJoin( strArray ) {
-	Str := strArray[1]
+ArrayJoin(strArray) {
+	Str := ""
 	for Counter, Entry in strArray
-		Str := Str . ", " . Entry
-	return Str
+		Str .= Entry . ", "
+	return Trim(Str, ", ")
 }
 
 FormatList(Obj, IndentDepth:=0, IndentChar:="`t") {
@@ -417,6 +423,7 @@ ReadLine(StringVar, LineNumber)
 }
 
 ShowStartup:
+	ListLines, On
 	Run, % ("properties " . AutoStartFile)
 	Return
 
@@ -426,7 +433,7 @@ CheckUpdate(localVersion, GitHubUser, repoName, versionControl, branch:="main")
 	Global MenuCreated
 	if (MenuCreated) {
 		WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-		URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/"versionControl
+		URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/" . versionControl
 		WebRequest.Open("GET", URL, true)
 		WebRequest.Send()
 		WebRequest.WaitForResponse()
@@ -446,15 +453,15 @@ SetUpdateStatusIcon:
 	Menu, OptionMenuBar, Rename, 2&, Updater
 	Switch UpdateStatus {
 		Case 1:
-		Menu, OptionMenuBar, Icon, Updater, Shell32.dll, 147, 16 ;Update icon
-		Menu, Tray, Tip, % (ScriptName . "`nUpdate available!")
-		if NOT (Notified) {
-			TrayTip, % (ScriptName . " Updater"), An Update is available!`nDownload it through the Updater Gui!, 5
-			Notified := true
-		}
+			Menu, OptionMenuBar, Icon, 2&, Shell32.dll, 147, 16 ;Update icon
+			Menu, Tray, Tip, % (ScriptName . "`nUpdate available!")
+			if NOT (Notified) {
+				TrayTip, % (ScriptName . " Updater"), An Update is available!`nDownload it through the Updater Gui!, 5
+				Notified := true
+			}
 		Case false:
 			Menu, Tray, Tip, % ScriptName
-			Menu, OptionMenuBar, Icon, Updater, ; Or Update circle icon
+			Menu, OptionMenuBar, Icon, 2&, ; blank Or Update circle icon
 		Default:
 			Menu, Tray, Tip, % (ScriptName . "`nUpdater ERROR: " . UpdateStatus)
 			Menu, OptionMenuBar, Icon, Updater, Shell32.dll, 128, 16 ;RedCross icon
@@ -464,23 +471,27 @@ SetUpdateStatusIcon:
 	Return
 
 ShowUpdater:
+	ListLines, On
 	Gui, Updater:Show, Center AutoSize, % (ScriptName . "updater")
 	
 	; TODO: Fix Parenting...?
-	Gosub UpdateRefresh
+	Gosub UpdaterRefresh
 	
 	Gui, Updater:+OwnDialogs
 	Gui, Options:+OwnerUpdater
 	Return
 
 UpdaterGuiClose:
+	ListLines, On
 	Gui, Options:-Owner
 	Gui, Updater:-OwnDialogs
 	Gui, Updater:Hide
 	Return
 
-UpdateRefresh:
+UpdaterRefresh:
+	ListLines, On
 	;SetCursor("WAIT")	;mostly gets stuck.... >:/
+	pause
 	Gosub SetUpdateStatusIcon
 	ChangeLog := GetChangeLog(GHUser, ScriptName, 3)
 	GuiControl, , ChangeLog, % ChangeLog
@@ -493,9 +504,6 @@ SetCursor(CursorName := "ARROW", ReplacedCursor := "ARROW") {
 	
 	StringUpper, CursorName, CursorName
 	StringUpper, ReplacedCursor, ReplacedCursor
-	
-	Global Replacor
-	Global Replaced
 	
 	Cursors := Object("ARROW"	, 32512
 				,"IBEAM"		, 32513
@@ -525,16 +533,17 @@ SetCursor(CursorName := "ARROW", ReplacedCursor := "ARROW") {
 	;DllCall( "SystemParametersInfo", UInt,SPI_SETCURSORS, UInt,0, UInt,0, UInt,0 )
 }
 
-GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=false) {
-	Global PollTime
+GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true) {
+	Global lastETag
 	if (Init) {
 		;CreateFormData(ReleasesRaw, ReleasesHeader, requestQuery)
 		URL := "https://api.github.com/repos/" . GitHubUser . "/" . repoName . "/releases?page=1&per_page=" . ChangeLogDepth
 		WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
 		; true for asynchronously, false for synchronously. Async lets Send wait for response
 		WebRequest.Open("GET", URL, false)
-		WebRequest.SetRequestHeader("Accept", "application/json;q=1.0,text/plain;q=0.1")
-		WebRequest.SetRequestHeader("If-Modified-Since", PollTime)
+		AcceptHeader := "application/json;q=1.0,text/plain;q=0.1"
+		WebRequest.SetRequestHeader("Accept", AcceptHeader)
+		WebRequest.SetRequestHeader("If-None-Match", lastETag)
 		WebRequest.Send()
 		
 		TimeOut := WebRequest.WaitForResponse(5)
@@ -542,41 +551,54 @@ GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=false) {
 		if (TimeOut != "VARIANT_FALSE") { ;if NOT TimeOut
 			RespHeaders := WebRequest.GetAllResponseHeaders()
 			ContentType := RegExReplace(WebRequest.GetResponseHeader("Content-Type"), "i);\s+charset=utf-8", , , 1)
-			PollTime := WebRequest.GetResponseHeader("date")
-			ChangeLogRateUsed := WebRequest.GetResponseHeader("x-ratelimit-remaining")
+			lastETag := WebRequest.GetResponseHeader("etag")
 			
-			Switch ContentType {
-				Case "application/json":
-					ReleasesRaw := WebRequest.ResponseText
-					
-					;Parse Json
-					Releases := JSON.Load(ReleasesRaw)
-					NetChangeLog := ""
-					
-					if (WebRequest.GetResponseHeader("x-ratelimit-remaining") == 0) {
-						NetChangeLog := "REQUEST LIMIT REACHED. Try again later.`n"
+			Switch WebRequest.Status {
+				Case 200:
+					Switch ContentType {
+						Case "application/json":
+							ReleasesRaw := WebRequest.ResponseText
+							
+							;Parse Json
+							Releases := JSON.Load(ReleasesRaw)
+							FileAppend, % Json.dump(Releases), test.json
+							NetChangeLog := ""
+							
+							if (WebRequest.GetResponseHeader("x-ratelimit-remaining") == 0) {
+								NetChangeLog := "REQUEST LIMIT REACHED. Try again later.`n"
+							}
+							
+							AboveZeroRelease := false
+							For i, release in Releases
+							{
+								AboveZeroRelease := true
+								ReleaseChangeLog := release.name
+								ReleaseChangeLog .= StringPad(release.tag_name, (85 - StrLen(release.name)), "L")
+								release.body := RegExReplace(release.body, "\R+", "`n")
+								
+								ReleaseBodyBlock := "   "
+								For key, val in ReadLine(release.body, "*")
+								{
+									ReleaseBodyBlock .= val . "`n" . "   "
+								}
+								ReleaseBodyBlock := RegExReplace(ReleaseBodyBlock, ")\s*$")
+								
+								ReleaseChangeLog .= "`n" . ReleaseBodyBlock
+								NetChangeLog := NetChangeLog . "`n`n" . ReleaseChangeLog
+							}
+							if (NOT AboveZeroRelease) {
+								NetChangeLog := "No releases yet!"
+							}
+						Default:
+							NetChangeLog := "Unexpected Content-Type: " . ContentType . "`n" . WebRequest.ResponseText
 					}
-					
-					For i, release in Releases
-					{
-						ReleaseChangeLog := release.name
-						ReleaseChangeLog .= StringPad(release.tag_name, (85 - StrLen(release.name)), "L")
-						release.body := RegExReplace(release.body, "\R+", "`n")
-						
-						ReleaseBodyBlock := "   "
-						For key, val in ReadLine(release.body, "*")
-						{
-							ReleaseBodyBlock .= val . "`n" . "   "
-						}
-						ReleaseBodyBlock := RegExReplace(ReleaseBodyBlock, ")\s*$")
-						
-						ReleaseChangeLog .= "`n" . ReleaseBodyBlock
-						NetChangeLog := NetChangeLog . "`n`n" . ReleaseChangeLog
-					}
+					NetChangeLog := Trim(NetChangeLog, "`r`n`t ")
+				Case 304:
+					;No New changelog, keep old one!
+					Return
 				Default:
-					NetChangeLog := "Unexpected Content-Type: " . ContentType . "`n" . WebRequest.ResponseText
+					NetChangeLog := "HTTP Code: " . WebRequest.Status . "`n" . WebRequest.StatusText
 			}
-			NetChangeLog := Trim(NetChangeLog, "`r`n`t ")
 		} else {
 			NetChangeLog := "http request timed out."
 		}
@@ -587,40 +609,52 @@ GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=false) {
 }
 
 AutoUpdater:
+	ListLines, On
 	AutoUpdater(ScriptVersion, GHUser, ScriptName, "version")
 	Return
 
-AutoUpdater(currentVersion, GitHubUser, repoName, versionControl, branch:="main")
-{
+AutoUpdater(currentVersion, GitHubUser, repoName, versionControl, branch:="main") {
 	/*
 		AutoHotkey Version 1.1.30.00
 		by mshall on AHK forums, Github.com/MattAHK
 		free for use, adapted by Chaos_02
-		TODO: Get latest release!
 	*/
 	
-	url := "https://github.com/" . GitHubUser . "/" . repoName . "/releases/latest/download/"
+	DownloadURL := "https://github.com/" . GitHubUser . "/" . repoName . "/releases/latest/download/"
 	
 	WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-	URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/"versionControl
-	WebRequest.Open("GET", URL, true)
+	URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/" . versionControl
+	WebRequest.Open("GET", URL, false)
 	WebRequest.Send()
+	WebRequest.WaitForResponse(5)
+	if NOT (ErrorLevel) {
+		UpStreamVersion := Trim(WebRequest.ResponseText, "`r`n`t ")
+		AUpdateStatus := (currentVersion != UpStreamVersion)
+	} else {
+		AUpdateStatus := ErrorLevel
+		ErrorLevel := 0
+	}
 	
-	WebRequest.WaitForResponse()
-	UpStreamVersion := WebRequest.ResponseText
-	if (currentVersion != UpStreamVersion) {
-		MsgBox, 1, % (repoName . " Updater"), % "Your current version is: " . currentVersion . ".`nLatest is: " . Trim(UpStreamVersion, "`r`n`t ") . ".`nPress OK to download."
-		IfMsgBox, OK
-		{
-			URLDownloadToFile, *0 %URL%, A_ScriptPath . "\.tmp-" . A_ScripName
-			if (ErrorLevel == 0) {
-				;Overwrite A_ScriptFullPath
-				Run, A_ScriptFullPath
-				ExitApp
-			} else {
-				MsgBox, % "An error has occured while downloading.`nCode: " . ErrorLevel
+	Switch AUpdateStatus {
+		Case 1:
+			
+			UpStreamVersion := WebRequest.ResponseText
+			
+			MsgBox, 1, % (repoName . " Updater"), % "Your current version is: " . currentVersion . ".`nLatest is: " . UpStreamVersion . ".`nPress OK to download."
+			IfMsgBox, OK
+			{
+				URLDownloadToFile, % ("*0 " . DownloadURL), A_ScriptPath . "\.tmp-" . A_ScripName
+				if (ErrorLevel == 0) {
+					;Overwrite A_ScriptFullPath
+					Run, A_ScriptFullPath
+					ExitApp
+				} else {
+					MsgBox, % "An error has occured while downloading.`nCode: " . ErrorLevel
+				}
 			}
-		}
+		Case false:
+			MsgBox, % "Already up-to-date!"
+		Default:
 	}
 	Return
 }
@@ -666,11 +700,12 @@ class JSON
 	 *     text    [in, ByRef] - JSON formatted string
 	 *     reviver   [in, opt] - function object, similar to JavaScript's
 	 *                           JSON.parse() 'reviver' parameter
-	 */
+	*/
 	class Load extends JSON.Functor
 	{
 		Call(self, ByRef text, reviver:="")
 		{
+		ListLines, Off
 			this.rev := IsObject(reviver) ? reviver : false
 		; Object keys(and array indices) are temporarily stored in arrays so that
 		; we can enumerate them in the order they appear in the document/text instead
@@ -771,6 +806,7 @@ class JSON
 						this.keys[holder].Push(key)
 				}
 			} ; while ( ... )
+			ListLines, On
 			return this.rev ? this.Walk(root, "") : root[""]
 		}
 		ParseError(expect, ByRef text, pos, len:=1)
@@ -826,6 +862,7 @@ class JSON
 	{
 		Call(self, value, replacer:="", space:="")
 		{
+			ListLines, Off
 			this.rep := IsObject(replacer) ? replacer : ""
 			this.gap := ""
 			if (space) {
@@ -837,6 +874,7 @@ class JSON
 					this.gap := SubStr(space, 1, 10)
 				this.indent := "`n"
 			}
+			ListLines, On
 			return this.Str({"": value}, "")
 		}
 		Str(holder, key)
