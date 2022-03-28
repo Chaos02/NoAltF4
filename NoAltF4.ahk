@@ -12,7 +12,7 @@ DefaultKeywords := ["Steam", "Riot", "Origin", "Battle"]
 
 
 
-
+;@Ahk2Exe-IgnoreBegin
 if (A_AHKVersion < "1.1.13") {
 	Gui, Version:New, AlwaysOnTop -MinimizeBox -Resize, ERROR
 	Gui, Version:Add, Link,, Error. Please download AHK > v1.1.13! `n (<a href="https://www.autohotkey.com/download/ahk-install.exe">Download</a>)
@@ -22,9 +22,18 @@ if (A_AHKVersion < "1.1.13") {
 	VersionGuiClose:
 		ExitApp
 }
+;@Ahk2Exe-IgnoreEnd
 
-ScriptVersion := "0.9.0"
+ScriptVersion := "1.0.0rc-1"
+;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
+;@Ahk2Exe-SetVersion %U_version%
 GHUser := "Chaos02"
+;@Ahk2Exe-Let U_Author = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
+;@Ahk2Exe-SetCompanyName U_Author
+;@Ahk2Exe-Obey U_ScriptName, SplitPath`, A_ScriptFullPath`, `, `, `, ScriptName
+;@Ahk2Exe-SetProductName %U_ScriptName%
+;@Ahk2Exe-ExeName %U_ScriptName%
+;@Ahk2Exe-SetLanguage 0409
 DefaultAddKeyWords := "Key, words, here"
 SplitPath, A_ScriptFullPath, , , , ScriptName
 ConfigFile := A_AppData . "\" . ScriptName . ".ini"
@@ -37,15 +46,7 @@ InclusionKeywords := Array()
 AdditionalKeywords := Array()
 SteamPaths := Array()
 
-	Hotkey, ^!P, Unpause
-	/*
-	FileDelete, % (A_AppData . "\" . ScriptName . ".txt")
-	NestObject2 := {"Haha test lul": "drölf", "Hilfe?":"maybe?"}
-	NestObject1 := Object("Property1", 5, "prop2", 10, "NestObject2", NestObject2)
-	TestObject := {"Value": false, "NestObj", NestObject1, "Keywords", DefaultKeywords )
-	FileAppend, % ExploreObj(TestObject) . "`n`n`nOwn:`n", % (A_AppData . "\" . ScriptName . ".txt")
-	FileAppend, % ObjectToString(TestObject), % (A_AppData . "\" . ScriptName . ".txt")
-	*/
+;	Hotkey, ^!P, Unpause
 
 Gosub ConfigRead
 
@@ -67,6 +68,7 @@ InclusionKeywords.Push(DefaultKeywords*)
 if (GetFromSteam) {
 	Gosub ReadSteamLibs
 }
+InclusionKeywords.Push(AdditionalKeywords*)
 
 Hotkey, $<!F4, HahaNo, Off
 Hotkey, $<^>!F4, DoIt, On
@@ -127,15 +129,21 @@ main:
 GuiCreator:
 	if NOT (MenuCreated) {
 		ListLines, Off
-		;Menu, TrayMenu, NoStandard ; Remove AHK Tray Menu entries
+		;@Ahk2Exe-SetMainIcon NoAltF4.ico
+		/*@Ahk2Exe-Keep
+			Menu, Tray, NoStandard ; Remove AHK Tray Menu entries
+			Menu, Tray, NoMainWindow ; Remove AHK Tray Menu entries
+			;ScriptVersion := FileGetInfo(A_ScriptFullPath).ProductVersion ; TODO: get Version from own file details
+			Menu, Tray, Icon, % A_ScriptFullPath, 1, 1 ;keys icon
+		*/
+		;@Ahk2Exe-IgnoreBegin
+			Menu, Tray, Icon, Shell32.dll, 105, 1 ;keys icon
+		;@Ahk2Exe-IgnoreEnd
 		Menu, Tray, Add, Configure
 		Menu, Tray, Default, Configure
 		; Menu, Tray, Color, 333333 ; Background Color of Tray Menu (goes away after hover >:/ )
 		Menu, Tray, Click, 2 ; Doubleclick to activate default menu item
 		Menu, Tray, Tip, % ScriptName
-		Menu, Tray, Icon, Shell32.dll, 105, 1 ;keys icon
-		
-		; FileGetVersion, ScriptVersion, A_ScriptFullPath
 		
 		Menu, OptionMenuMiscSubmenu, Add, &Open config file, OpenCfg,
 		Menu, OptionMenuMiscSubmenu, Add, % ("&Stop " . ScriptName), Stop,
@@ -154,8 +162,8 @@ GuiCreator:
 	}
 	
 	ListLines, Off
-	Gui, Updater:Font, , "Lucida Console"
 	Gui, Updater:New, +Border +Caption +DPIScale -Resize, % (ScriptName . " updater")
+	Gui, Updater:Font, , "Lucida Console"
 	Gui, Updater:Add, GroupBox, x2 y0 w380 h140, Changelog:
 	Gui, Updater:Add, Edit, x12 y19 r8 vChangeLog w360 +ReadOnly +Wrap, % ChangeLog
 	Gui, Updater:Add, Button, x100 y150 w80 h20 gUpdaterRefresh, Refresh
@@ -167,7 +175,7 @@ GuiCreator:
 	Gui, Options:Add, Text, x12 y14 r1 cGray, % ("Built-in: " . ArrayJoin(DefaultKeywords))
 	Gui, Options:Add, Text, x12 y28 r1 cGray, % ("Steam: " . ArrayJoin(SteamPaths))
 	Gui, Options:Add, Edit, x12 y44 w360 h20 -Wrap -Multi -WantReturn gEditChange vKeywordsRaw, % KeywordsRaw
-	Gui, Options:Add, CheckBox, x14 y69 r1 vGetFromSteam Checked%GetFromSteam%, Import Libraries from Steam?
+	Gui, Options:Add, CheckBox, x14 y69 r1 gReadSteamLibs vGetFromSteam Checked%GetFromSteam%, Import Libraries from Steam?
 	Gui, Options:Add, CheckBox, x12 y99 r1 vShowSettings Checked%ShowSettings%, Show options again?
 	Gui, Options:Add, Button, x200 y98 w80 h20 gResetOptions, Default
 	Gui, Options:Add, Button, x300 y98 w80 h20 gGuiSave, Save
@@ -242,14 +250,20 @@ EditChange:
 GuiSave:
 	ListLines, On
 	Gui, Options:Submit, NoHide
+	InclusionKeywords := DefaultKeywords
+	if (GetFromSteam) {
+		InclusionKeywords.Push(SteamPaths)
+	}
 	AdditionalKeywords := Array()
 	AdditionalKeywords := StrSplit(KeywordsRaw, ",", " `t")
 	if (ErrorLevel) {
 		MsgBox, "Input invalid! Please try again!`nFormat: Steam, Origin, etc..."
 	} else {
+		InclusionKeywords.Push(AdditionalKeywords*)
 		Gui, Options:Hide
 		Gosub ConfigWrite
 	}
+	;MsgBox, % Json.Dump(InclusionKeywords, , "  ")
 	Return
 
 MoreOpts:
@@ -263,34 +277,43 @@ OptionsGuiClose:
 
 ReadSteamLibs:
 	; Get Game folders from Steam:
-	
-	While NOT (FileOpen(LibFilePath, 256))
-	{
-		FileSelectFolder, %SteamPath%, "*" + %SteamPath%, 1, "Inavlid Steam installation.`nSelect Valid Steam install folder!`nDefault: C:\Program Files (x86)\Steam"
-		SteamPath := RegExReplace(SteamPath, "\\$")
-		LibFilePath := "" . SteamPath . "\steamapps\libraryfolders.vdf" . ""
+	Gui, Options:Submit, NoHide
+	if (GetFromSteam) {
+		While NOT (FileOpen(LibFilePath, 256))
+		{
+			FileSelectFolder, %SteamPath%, "*" + %SteamPath%, 1, "Inavlid Steam installation.`nSelect Valid Steam install folder!`nDefault: C:\Program Files (x86)\Steam"
+			SteamPath := RegExReplace(SteamPath, "\\$")
+			LibFilePath := "" . SteamPath . "\steamapps\libraryfolders.vdf" . ""
+		}
+		if ErrorLevel {
+			MsgBox % "ERROR:" . A_LastError
+			ErrorLevel := 0
+		}
+		SteamLibFile := FileOpen(LibFilePath, 256)
+		SteamPathRegex := "(?<=""path""\t\t)"".+"""
+		
+		While (NOT SteamLibFile.AtEOF) {
+			ListLines, Off
+			LibLine := SteamLibFile.ReadLine()
+			LineWithPath := ""
+			RegExMatch(LibLine, SteamPathRegex, LineWithPath)
+			if (LineWithPath) {
+				ListLines, On
+				Path := RegExReplace(LineWithPath, "\\\\", "\")
+				SteamPaths.Push(Path)
+				ListLines, Off
+			}
+		}
+		ListLines, On
+	} else {
+		SteamPaths := Array()
 	}
-	if ErrorLevel {
-		MsgBox % "ERROR:" . A_LastError
-		ErrorLevel := 0
-	}
-	SteamLibFile := FileOpen(LibFilePath, 256)
-	LibFileContent := SteamLibFile.Read()
-	Loop, Parse, % LibFileContent, "`n`r", " `t"
-	{
-		ListLines, Off
-		PathRegex := "O)(?<=""path""\t\t)"".+"""
-		RegExMatch(A_LoopField, PathRegex, FoundPos)
-		Path := RegExReplace(FoundPos.Value, "\\", "\")
-		SteamPaths.Push(Path)
-		InclusionKeywords.Push(Path)
-	}
-	ListLines, On
+	GuiControl, Text, Options:GetFromSteam, % ("Steam: " . ArrayJoin(SteamPaths))
 	Return
 
 Stop:
 	ExitApp
-
+/*
 Unpause:
 	Pause, Toggle
 	WinGet, WinPath, ProcessPath, A
@@ -298,16 +321,31 @@ Unpause:
 		Send {F5}
 	}
 	Return
+*/
 
 HahaNo:
 	ListLines, On
-	MsgBox, No.
+	MsgBox, No. >:/
 	Return
 
 DoIt:
 	ListLines, On
 	SendInput !{F4}
 	Return
+
+versionCompare(vers1, vers2) {
+	Version1 := Array(RegExReplace(vers1, "\D+", ", ", i))
+	Version2 := Array(RegExReplace(vers2, "\D+", ", ", i))
+	Loop, 2 {
+		if (Version2[A_Index] > Version1[A_Index]) {
+			Return true
+		}
+	}
+	if (Version1[3] == Version2[3]) {
+		Return (Version1[4] == "0")
+	}
+	Return false
+}
 
 ArrayJoin(strArray) {
 	Str := ""
@@ -439,7 +477,7 @@ CheckUpdate(localVersion, GitHubUser, repoName, versionControl, branch:="main")
 		WebRequest.WaitForResponse()
 		UpStreamVersion := WebRequest.ResponseText
 		if NOT (ErrorLevel) {
-			Return (localVersion != UpStreamVersion)
+			Return versionCompare(localVersion, UpStreamVersion)
 		} else {
 			Return ErrorLevel
 		}
@@ -461,12 +499,11 @@ SetUpdateStatusIcon:
 			}
 		Case false:
 			Menu, Tray, Tip, % ScriptName
-			Menu, OptionMenuBar, Icon, 2&, ; blank Or Update circle icon
+			Menu, OptionMenuBar, NoIcon, 2&, ; blank Or Update circle icon
 		Default:
 			Menu, Tray, Tip, % (ScriptName . "`nUpdater ERROR: " . UpdateStatus)
 			Menu, OptionMenuBar, Icon, Updater, Shell32.dll, 128, 16 ;RedCross icon
 			Menu, OptionMenuBar, Rename, 2&, % ("Updater (error: " . UpdateStatus . ")")
-			; Display ErrorLevel somehow?
 	}
 	Return
 
@@ -491,7 +528,6 @@ UpdaterGuiClose:
 UpdaterRefresh:
 	ListLines, On
 	;SetCursor("WAIT")	;mostly gets stuck.... >:/
-	pause
 	Gosub SetUpdateStatusIcon
 	ChangeLog := GetChangeLog(GHUser, ScriptName, 3)
 	GuiControl, , ChangeLog, % ChangeLog
@@ -561,7 +597,7 @@ GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true) {
 							
 							;Parse Json
 							Releases := JSON.Load(ReleasesRaw)
-							FileAppend, % Json.dump(Releases), test.json
+							;FileAppend, % Json.dump(Releases), test.json
 							NetChangeLog := ""
 							
 							if (WebRequest.GetResponseHeader("x-ratelimit-remaining") == 0) {
@@ -577,6 +613,9 @@ GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true) {
 								release.body := RegExReplace(release.body, "\R+", "`n")
 								
 								ReleaseBodyBlock := "   "
+								if (release.prerelease == true) {
+									ReleaseBodyBlock .= "(PRERELEASE)`n   "
+								}
 								For key, val in ReadLine(release.body, "*")
 								{
 									ReleaseBodyBlock .= val . "`n" . "   "
@@ -619,8 +658,11 @@ AutoUpdater(currentVersion, GitHubUser, repoName, versionControl, branch:="main"
 		by mshall on AHK forums, Github.com/MattAHK
 		free for use, adapted by Chaos_02
 	*/
-	
-	DownloadURL := "https://github.com/" . GitHubUser . "/" . repoName . "/releases/latest/download/"
+	if (A_IsCompiled) {
+		DownloadURL := "https://github.com/" . GitHubUser . "/" . repoName . "/releases/latest/download/"
+	} else {
+		DownloadURL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/" . repoName . ".ahk"
+	}
 	
 	WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
 	URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/" . versionControl
@@ -629,7 +671,7 @@ AutoUpdater(currentVersion, GitHubUser, repoName, versionControl, branch:="main"
 	WebRequest.WaitForResponse(5)
 	if NOT (ErrorLevel) {
 		UpStreamVersion := Trim(WebRequest.ResponseText, "`r`n`t ")
-		AUpdateStatus := (currentVersion != UpStreamVersion)
+		AUpdateStatus := versionCompare(currentVersion, UpStreamVersion)
 	} else {
 		AUpdateStatus := ErrorLevel
 		ErrorLevel := 0
@@ -985,4 +1027,24 @@ class JSON
 				return (new this).Call(arg, args*)
 		}
 	}
+}
+
+FileGetInfo(lptstrFilename) {
+	List := "Comments InternalName ProductName CompanyName LegalCopyright ProductVersion"
+		. " FileDescription LegalTrademarks PrivateBuild FileVersion OriginalFilename SpecialBuild"
+	dwLen := DllCall("Version.dll\GetFileVersionInfoSize", "Str", lptstrFilename, "Ptr", 0)
+	dwLen := VarSetCapacity( lpData, dwLen + A_PtrSize)
+	DllCall("Version.dll\GetFileVersionInfo", "Str", lptstrFilename, "UInt", 0, "UInt", dwLen, "Ptr", &lpData)
+	lplpBuffer := ""
+	puLen := ""
+	DllCall("Version.dll\VerQueryValue", "Ptr", &lpData, "Str", "\VarFileInfo\Translation", "PtrP", lplpBuffer, "PtrP", puLen )
+	sLangCP := Format("{:04X}{:04X}", NumGet(lplpBuffer+0, "UShort"), NumGet(lplpBuffer+2, "UShort"))
+	i := {}			;replace with \/
+	; i := Map()	; for AHK>v2
+	Loop, Parse, % List, %A_Space%
+	{
+		DllCall("Version.dll\VerQueryValue", "Ptr", &lpData, "Str", "\StringFileInfo\" sLangCp "\" A_LoopField, "PtrP", lplpBuffer, "PtrP", puLen )
+		? i[A_LoopField] := StrGet(lplpBuffer, puLen) : ""
+	}
+	return i
 }
