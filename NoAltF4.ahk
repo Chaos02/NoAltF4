@@ -24,9 +24,10 @@ if (A_AHKVersion < "1.1.13") {
 }
 ;@Ahk2Exe-IgnoreEnd
 
-ScriptVersion := "1.0.0rc-1"
+ScriptVersion := "1.0.0rc-2"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
-;@Ahk2Exe-SetVersion %U_version%
+;@Ahk2Exe-SetProductVersion %U_version%
+;@Ahk2Exe-SetFileVersion %U_version~\D+~.%
 GHUser := "Chaos02"
 ;@Ahk2Exe-Let U_Author = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 ;@Ahk2Exe-SetCompanyName U_Author
@@ -53,7 +54,7 @@ Gosub ConfigRead
 MenuCreated := false
 Gosub GuiCreator
 
-if (ShowSettings || NOT FileExist(AutoStartFile)) {
+if (ShowSettings || InitialRun) {
 	gosub Configure
 }
 
@@ -65,15 +66,16 @@ LibFilePath := "" . SteamPath . "\steamapps\libraryfolders.vdf" . ""
 
 
 InclusionKeywords.Push(DefaultKeywords*)
+InclusionKeywords.Push(AdditionalKeywords*)
 if (GetFromSteam) {
 	Gosub ReadSteamLibs
+	InclusionKeywords.Push(SteamPaths*)
 }
-InclusionKeywords.Push(AdditionalKeywords*)
 
 Hotkey, $<!F4, HahaNo, Off
 Hotkey, $<^>!F4, DoIt, On
 
-;SetTimer, main, 1000
+SetTimer, main, 1000
 
 Gosub SetUpdateStatusIcon
 
@@ -82,7 +84,7 @@ while (1>0) {
 	; NOP
 	sleep, 2000
 }
-MsgBox, ERROR: We were not supposed to get to this point....`nScript will exit.
+MsgBox, % "ERROR: We were not supposed to get to this point....`n" . ScriptName . " will exit."
 ExitApp
 
 
@@ -114,11 +116,11 @@ main:
 			break
 		}
 	}
-
+	
 	if HasWord {
 		ListLines, On
 		Hotkey, <!F4, On
-		SetTimer, main, 5000
+		SetTimer, main, 2000
 	} else {
 		ListLines, On
 		Hotkey, <!F4, Off
@@ -142,9 +144,12 @@ GuiCreator:
 		Menu, Tray, Add, Configure
 		Menu, Tray, Default, Configure
 		; Menu, Tray, Color, 333333 ; Background Color of Tray Menu (goes away after hover >:/ )
-		Menu, Tray, Click, 2 ; Doubleclick to activate default menu item
+		Menu, Tray, Click, 1 ; single click to activate default menu item
 		Menu, Tray, Tip, % ScriptName
 		
+		Menu, OptionMenuMiscSubmenu, Add, Set &deny message, OpenCfg,
+		Menu, OptionMenuMiscSubmenu, Add, Set &override hotkey, OpenCfg, ;TODO
+		Menu, OptionMenuMiscSubmenu, Add, , , ; seperator
 		Menu, OptionMenuMiscSubmenu, Add, &Open config file, OpenCfg,
 		Menu, OptionMenuMiscSubmenu, Add, % ("&Stop " . ScriptName), Stop,
 		Menu, OptionMenuMiscSubmenu, Add, Show startup &entry, ShowStartup
@@ -162,15 +167,16 @@ GuiCreator:
 	}
 	
 	ListLines, Off
-	Gui, Updater:New, +Border +Caption +DPIScale -Resize, % (ScriptName . " updater")
+	Gui, Updater:New, +Border +Caption +DPIScale -Resize, % (ScriptName . "` updater")
 	Gui, Updater:Font, , "Lucida Console"
 	Gui, Updater:Add, GroupBox, x2 y0 w380 h140, Changelog:
 	Gui, Updater:Add, Edit, x12 y19 r8 vChangeLog w360 +ReadOnly +Wrap, % ChangeLog
+	GuiControl, Font, Updater:ChangeLog
 	Gui, Updater:Add, Button, x100 y150 w80 h20 gUpdaterRefresh, Refresh
 	Gui, Updater:Add, Button, x200 y150 w80 h20 gAutoUpdater, Update
 	Gui, Updater:Add, Button, x300 y150 w80 h20 gUpdaterGuiClose, Close
 	
-	Gui, Options:New, +Border +Caption +DPIScale -Resize, % (ScriptName . " " . "options")
+	Gui, Options:New, +Border +Caption +DPIScale -Resize, % (ScriptName . "` options")
 	Gui, Options:Add, GroupBox, x2 y0 w380 h90, Keywords
 	Gui, Options:Add, Text, x12 y14 r1 cGray, % ("Built-in: " . ArrayJoin(DefaultKeywords))
 	Gui, Options:Add, Text, x12 y28 r1 cGray, % ("Steam: " . ArrayJoin(SteamPaths))
@@ -202,9 +208,9 @@ ConfigRead:
 	}
 	
 	AdditionalKeywords := StrSplit(KeywordsRaw, ",", " `t")
-	AdditionalKeywords.Delete("Key")
-	AdditionalKeywords.Delete("words")
-	AdditionalKeywords.Delete("here")
+	For _iC, word in DefaultAddKeyWords {
+		AdditionalKeywords.Delete(word)
+	}
 	Return
 
 ConfigWrite:
@@ -229,7 +235,7 @@ Configure:
 	Gui, Options:Destroy
 	Gui, Updater:Destroy
 	Gosub GuiCreator
-	Gui, Options:Show, Center AutoSize, % (ScriptName . "options")
+	Gui, Options:Show, Center AutoSize, % (ScriptName . " options")
 	Loop 3 {
 		Gui Flash
 		Sleep 500
@@ -238,9 +244,8 @@ Configure:
 
 ResetOptions:
 	FileDelete, % ConfigFile
-	Gosub ConfigRead
-	Gui, Options:Destroy
-	Gosub GuiCreator
+	Gosub Configure
+	
 	Return
 
 EditChange:
@@ -252,7 +257,7 @@ GuiSave:
 	Gui, Options:Submit, NoHide
 	InclusionKeywords := DefaultKeywords
 	if (GetFromSteam) {
-		InclusionKeywords.Push(SteamPaths)
+		InclusionKeywords.Push(SteamPaths*)
 	}
 	AdditionalKeywords := Array()
 	AdditionalKeywords := StrSplit(KeywordsRaw, ",", " `t")
@@ -272,6 +277,10 @@ MoreOpts:
 
 OptionsGuiClose:
 	ListLines, On
+	Gui, Options:Hide
+	Return
+
+OptionsGuiEscape:
 	Gui, Options:Hide
 	Return
 
@@ -313,7 +322,7 @@ ReadSteamLibs:
 
 Stop:
 	ExitApp
-/*
+
 Unpause:
 	Pause, Toggle
 	WinGet, WinPath, ProcessPath, A
@@ -321,7 +330,7 @@ Unpause:
 		Send {F5}
 	}
 	Return
-*/
+
 
 HahaNo:
 	ListLines, On
@@ -334,8 +343,21 @@ DoIt:
 	Return
 
 versionCompare(vers1, vers2) {
-	Version1 := Array(RegExReplace(vers1, "\D+", ", ", i))
-	Version2 := Array(RegExReplace(vers2, "\D+", ", ", i))
+	/*
+		Returns true if the first version is greater than the second.
+		TODO: Replace RegExReplace and afterwards check for keywords InStr()
+	*/
+	Version1 := StrSplit(RegExReplace(vers1, "\D+", ", "), ",", " `t`r`n")
+	Version2 := StrSplit(RegExReplace(vers2, "\D+", ", "), ",", " `t`r`n")
+	Loop, 4 {
+		if (Version1[A_Index] == "") {
+			Version1[A_Index] := "0"
+		}
+		if (Version2[A_Index] == "") {
+			Version2[A_Index] := "0"
+		}
+	}
+	
 	Loop, 2 {
 		if (Version2[A_Index] > Version1[A_Index]) {
 			Return true
@@ -449,7 +471,7 @@ ObjectToString(Obj, ObjDepth:=0, IndentChar:="`t") {
 ReadLine(StringVar, LineNumber)
 {
 	StringPerLine := Array()
-	Loop, Parse, StringVar, "`n`r"
+	Loop, Parse, StringVar, "`n", "`r"
 	{
 		StringPerLine[A_Index] := A_LoopField
 	}
@@ -467,16 +489,20 @@ ShowStartup:
 
 CheckUpdate(localVersion, GitHubUser, repoName, versionControl, branch:="main")
 {
-	; Seperate thread?
 	Global MenuCreated
 	if (MenuCreated) {
+		ErrorLevel := 0
 		WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
 		URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/" . versionControl
 		WebRequest.Open("GET", URL, true)
+		try {
 		WebRequest.Send()
 		WebRequest.WaitForResponse()
-		UpStreamVersion := WebRequest.ResponseText
-		if NOT (ErrorLevel) {
+		} catch HttpErr {
+			Return "WinHttp: " . HttpErr
+		}
+		UpStreamVersion := WebRequest.ResponseText ; TODO: swap with latest release tag
+		if NOT (ErrorLevel) { ; TODO: find source of ErrorLevel.
 			Return versionCompare(localVersion, UpStreamVersion)
 		} else {
 			Return ErrorLevel
@@ -491,15 +517,15 @@ SetUpdateStatusIcon:
 	Menu, OptionMenuBar, Rename, 2&, Updater
 	Switch UpdateStatus {
 		Case 1:
-			Menu, OptionMenuBar, Icon, 2&, Shell32.dll, 147, 16 ;Update icon
+			Menu, OptionMenuBar, Icon, 2&, Shell32.dll, 147, 16 ; Update icon
 			Menu, Tray, Tip, % (ScriptName . "`nUpdate available!")
 			if NOT (Notified) {
-				TrayTip, % (ScriptName . " Updater"), An Update is available!`nDownload it through the Updater Gui!, 5
+				TrayTip, % (ScriptName . " Update available!"), An Update is available!`nDownload it through the Updater Gui!, 5
 				Notified := true
 			}
 		Case false:
 			Menu, Tray, Tip, % ScriptName
-			Menu, OptionMenuBar, NoIcon, 2&, ; blank Or Update circle icon
+			Menu, OptionMenuBar, NoIcon, 2&, ; blank
 		Default:
 			Menu, Tray, Tip, % (ScriptName . "`nUpdater ERROR: " . UpdateStatus)
 			Menu, OptionMenuBar, Icon, Updater, Shell32.dll, 128, 16 ;RedCross icon
@@ -511,9 +537,9 @@ ShowUpdater:
 	ListLines, On
 	Gui, Updater:Show, Center AutoSize, % (ScriptName . "updater")
 	
-	; TODO: Fix Parenting...?
 	Gosub UpdaterRefresh
 	
+	; TODO: Fix Parenting...?
 	Gui, Updater:+OwnDialogs
 	Gui, Options:+OwnerUpdater
 	Return
@@ -527,10 +553,11 @@ UpdaterGuiClose:
 
 UpdaterRefresh:
 	ListLines, On
-	;SetCursor("WAIT")	;mostly gets stuck.... >:/
+	;SetCursor("WAIT")	;TODO: mostly gets stuck.. >:/
 	Gosub SetUpdateStatusIcon
-	ChangeLog := GetChangeLog(GHUser, ScriptName, 3)
-	GuiControl, , ChangeLog, % ChangeLog
+	ChangeLog := GetChangeLog(GHUser, ScriptName, 5)
+	GuiControl, , Updater:ChangeLog, ChangeLog
+	GuiControl, Text, Updater:ChangeLog, ChangeLog
 	;SetCursor("ARROW")
 	Return
 
@@ -576,13 +603,16 @@ GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true) {
 		URL := "https://api.github.com/repos/" . GitHubUser . "/" . repoName . "/releases?page=1&per_page=" . ChangeLogDepth
 		WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
 		; true for asynchronously, false for synchronously. Async lets Send wait for response
-		WebRequest.Open("GET", URL, false)
+		WebRequest.Open("GET", URL, true)
 		AcceptHeader := "application/json;q=1.0,text/plain;q=0.1"
 		WebRequest.SetRequestHeader("Accept", AcceptHeader)
 		WebRequest.SetRequestHeader("If-None-Match", lastETag)
+		try {
 		WebRequest.Send()
-		
 		TimeOut := WebRequest.WaitForResponse(5)
+		} catch HttpErr {
+			Return "WinHttp: " . HttpErr
+		}
 		
 		if (TimeOut != "VARIANT_FALSE") { ;if NOT TimeOut
 			RespHeaders := WebRequest.GetAllResponseHeaders()
@@ -610,15 +640,18 @@ GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true) {
 								AboveZeroRelease := true
 								ReleaseChangeLog := release.name
 								ReleaseChangeLog .= StringPad(release.tag_name, (85 - StrLen(release.name)), "L")
-								release.body := RegExReplace(release.body, "\R+", "`n")
+								release.body := RegExReplace(release.body, "\\r(\\n)*", "`n")
+								bodyNoJson := RegExReplace(release.body, "\\r", "")		; Willy nilly wonky >:/
+								bodyNoJson := RegExReplace(bodyNoJson, "\\", "")
 								
-								ReleaseBodyBlock := "   "
+								ReleaseBodyBlock := "  "
 								if (release.prerelease == true) {
-									ReleaseBodyBlock .= "(PRERELEASE)`n   "
+									ReleaseBodyBlock .= "(PRERELEASE)`n     "
 								}
-								For key, val in ReadLine(release.body, "*")
+								releaseBody := StrSplit(bodyNoJson, "`n")
+								For key, val in releaseBody
 								{
-									ReleaseBodyBlock .= val . "`n" . "   "
+									ReleaseBodyBlock .= val . "`n" . "     "
 								}
 								ReleaseBodyBlock := RegExReplace(ReleaseBodyBlock, ")\s*$")
 								
@@ -668,7 +701,12 @@ AutoUpdater(currentVersion, GitHubUser, repoName, versionControl, branch:="main"
 	URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/" . versionControl
 	WebRequest.Open("GET", URL, false)
 	WebRequest.Send()
-	WebRequest.WaitForResponse(5)
+	try {
+		WebRequest.Send()
+		WebRequest.WaitForResponse(5)
+	} catch HttpErr {
+		Return "WinHttp: " . HttpErr
+	}
 	if NOT (ErrorLevel) {
 		UpStreamVersion := Trim(WebRequest.ResponseText, "`r`n`t ")
 		AUpdateStatus := versionCompare(currentVersion, UpStreamVersion)
