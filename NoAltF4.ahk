@@ -24,7 +24,7 @@ if (A_AHKVersion < "1.1.13") {
 }
 ;@Ahk2Exe-IgnoreEnd
 
-ScriptVersion := "1.0.0rc-2"
+ScriptVersion := "0.9.0rc-2"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 ;@Ahk2Exe-SetProductVersion %U_version%
 ;@Ahk2Exe-SetFileVersion %U_version~\D+~.%
@@ -79,13 +79,7 @@ SetTimer, main, 1000
 
 Gosub SetUpdateStatusIcon
 
-ListLines, Off
-while (1>0) {
-	; NOP
-	sleep, 2000
-}
-MsgBox, % "ERROR: We were not supposed to get to this point....`n" . ScriptName . " will exit."
-ExitApp
+#Persistent
 
 
 ; TODO: Replace Labels with functions:
@@ -168,13 +162,13 @@ GuiCreator:
 	
 	ListLines, Off
 	Gui, Updater:New, +Border +Caption +DPIScale -Resize, % (ScriptName . "` updater")
-	Gui, Updater:Font, , "Lucida Console"
 	Gui, Updater:Add, GroupBox, x2 y0 w380 h140, Changelog:
-	Gui, Updater:Add, Edit, x12 y19 r8 vChangeLog w360 +ReadOnly +Wrap, % ChangeLog
-	GuiControl, Font, Updater:ChangeLog
 	Gui, Updater:Add, Button, x100 y150 w80 h20 gUpdaterRefresh, Refresh
 	Gui, Updater:Add, Button, x200 y150 w80 h20 gAutoUpdater, Update
 	Gui, Updater:Add, Button, x300 y150 w80 h20 gUpdaterGuiClose, Close
+	Gui, Updater:Font, , Lucida Console
+	Gui, Updater:Add, Edit, x12 y19 r9 w360 vLogChange +ReadOnly +Wrap, "Press Refresh for changelog."
+	GuiControl, Font, Updater:LogChange
 	
 	Gui, Options:New, +Border +Caption +DPIScale -Resize, % (ScriptName . "` options")
 	Gui, Options:Add, GroupBox, x2 y0 w380 h90, Keywords
@@ -244,6 +238,8 @@ Configure:
 
 ResetOptions:
 	FileDelete, % ConfigFile
+	SteamPaths := Array()
+	AdditionalKeywords := Array()
 	Gosub Configure
 	
 	Return
@@ -287,6 +283,7 @@ OptionsGuiEscape:
 ReadSteamLibs:
 	; Get Game folders from Steam:
 	Gui, Options:Submit, NoHide
+	SteamPaths := Array()
 	if (GetFromSteam) {
 		While NOT (FileOpen(LibFilePath, 256))
 		{
@@ -534,30 +531,22 @@ SetUpdateStatusIcon:
 	Return
 
 ShowUpdater:
-	ListLines, On
-	Gui, Updater:Show, Center AutoSize, % (ScriptName . "updater")
-	
+	Gui, Updater:Show, Center AutoSize, % (ScriptName . " Updater")
+	Gui, Updater:+OwnerOptions
+
 	Gosub UpdaterRefresh
-	
-	; TODO: Fix Parenting...?
-	Gui, Updater:+OwnDialogs
-	Gui, Options:+OwnerUpdater
+
 	Return
 
 UpdaterGuiClose:
-	ListLines, On
-	Gui, Options:-Owner
-	Gui, Updater:-OwnDialogs
 	Gui, Updater:Hide
 	Return
 
 UpdaterRefresh:
-	ListLines, On
 	;SetCursor("WAIT")	;TODO: mostly gets stuck.. >:/
 	Gosub SetUpdateStatusIcon
 	ChangeLog := GetChangeLog(GHUser, ScriptName, 5)
-	GuiControl, , Updater:ChangeLog, ChangeLog
-	GuiControl, Text, Updater:ChangeLog, ChangeLog
+	GuiControl, Updater:, LogChange, % ChangeLog
 	;SetCursor("ARROW")
 	Return
 
@@ -588,15 +577,31 @@ SetCursor(CursorName := "ARROW", ReplacedCursor := "ARROW") {
 	Replacor := Cursors[CursorName]
 	Replaced := Cursors[ReplacedCursor]
 	
+	try {
 	CursorHandle := DllCall( "LoadCursor", Uint,0, Int, Replacor )
-	DllCall( "SetSystemCursor", Uint, CursorHandle, Int, Replaced )
+	ErrorLevel := DllCall( "SetSystemCursor", Uint, CursorHandle, Int, Replaced )
+	} catch {
+		throw Exception(ErrorLevel)
+	}
 	Return ErrorLevel
 	;Reload system cursors (Restore)
 	;SPI_SETCURSORS := 0x57
 	;DllCall( "SystemParametersInfo", UInt,SPI_SETCURSORS, UInt,0, UInt,0, UInt,0 )
 }
 
-GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true) {
+WordWrap(strinput, intwidth, indent:="  ") {
+	if (StrLen(strinput) <= intwidth) {
+		Return strinput
+	} else {
+		LastSpace := InStr(strinput, " ",, -1 * intwidth)
+		if (NOT LastSpace) {
+			Return strinput
+		}
+	}
+	Return SubStr(strinput, 1, LastSpace - 1) . "`n" . indent . %A_ThisFunc%(SubStr(strinput, LastSpace + 1), intwidth, indent)
+}
+
+GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true, WindowWidth:=54) {
 	Global lastETag
 	if (Init) {
 		;CreateFormData(ReleasesRaw, ReleasesHeader, requestQuery)
@@ -639,7 +644,7 @@ GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true) {
 							{
 								AboveZeroRelease := true
 								ReleaseChangeLog := release.name
-								ReleaseChangeLog .= StringPad(release.tag_name, (85 - StrLen(release.name)), "L")
+								ReleaseChangeLog .= StringPad("tag: " . release.tag_name, (WindowWidth - 5 - StrLen(release.name)), "L")
 								release.body := RegExReplace(release.body, "\\r(\\n)*", "`n")
 								bodyNoJson := RegExReplace(release.body, "\\r", "")		; Willy nilly wonky >:/
 								bodyNoJson := RegExReplace(bodyNoJson, "\\", "")
@@ -651,7 +656,16 @@ GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true) {
 								releaseBody := StrSplit(bodyNoJson, "`n")
 								For key, val in releaseBody
 								{
-									ReleaseBodyBlock .= val . "`n" . "     "
+									/*
+									line := ""
+									TextBlock := WordWrap(val, WindowWidth - 5)
+									Loop, Parse, TextBlock, "`n", ""
+									{
+										line .= "`n     " . A_LoopField
+									} 
+									*/
+									line := val . "`n" . "     "
+									ReleaseBodyBlock .= line
 								}
 								ReleaseBodyBlock := RegExReplace(ReleaseBodyBlock, ")\s*$")
 								
@@ -667,7 +681,8 @@ GetChangeLog(GitHubUser, repoName, ChangeLogDepth:=1, Init:=true) {
 					NetChangeLog := Trim(NetChangeLog, "`r`n`t ")
 				Case 304:
 					;No New changelog, keep old one!
-					Return
+					Global ChangeLog
+					Return ChangeLog
 				Default:
 					NetChangeLog := "HTTP Code: " . WebRequest.Status . "`n" . WebRequest.StatusText
 			}
@@ -690,17 +705,10 @@ AutoUpdater(currentVersion, GitHubUser, repoName, versionControl, branch:="main"
 		AutoHotkey Version 1.1.30.00
 		by mshall on AHK forums, Github.com/MattAHK
 		free for use, adapted by Chaos_02
-	*/
-	if (A_IsCompiled) {
-		DownloadURL := "https://github.com/" . GitHubUser . "/" . repoName . "/releases/latest/download/"
-	} else {
-		DownloadURL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/" . repoName . ".ahk"
-	}
-	
+	*/	
 	WebRequest := ComObjCreate("WinHttp.WinHttpRequest.5.1")
 	URL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/" . versionControl
 	WebRequest.Open("GET", URL, false)
-	WebRequest.Send()
 	try {
 		WebRequest.Send()
 		WebRequest.WaitForResponse(5)
@@ -714,27 +722,96 @@ AutoUpdater(currentVersion, GitHubUser, repoName, versionControl, branch:="main"
 		AUpdateStatus := ErrorLevel
 		ErrorLevel := 0
 	}
-	
 	Switch AUpdateStatus {
 		Case 1:
 			
-			UpStreamVersion := WebRequest.ResponseText
 			
 			MsgBox, 1, % (repoName . " Updater"), % "Your current version is: " . currentVersion . ".`nLatest is: " . UpStreamVersion . ".`nPress OK to download."
 			IfMsgBox, OK
 			{
-				URLDownloadToFile, % ("*0 " . DownloadURL), A_ScriptPath . "\.tmp-" . A_ScripName
-				if (ErrorLevel == 0) {
-					;Overwrite A_ScriptFullPath
-					Run, A_ScriptFullPath
-					ExitApp
+				if (NOT A_IsCompiled) {
+					DownloadURL := "https://raw.githubusercontent.com/" . GitHubUser . "/" . repoName . "/" . branch . "/" . repoName . ".ahk"
+					WebRequest.Open("GET", DownloadURL, false)
+					try {
+						WebRequest.Send()
+						WebRequest.WaitForResponse(10)
+					} catch HttpErr {
+						MsgBox, % "An error has occured while downloading.`nCode: " . ErrorLevel
+					}
+
+					if (WebRequest.Status == 200) {
+						FileAppend, % WebRequest.ResponseText, ".tmp-" . A_ScriptName
+						;Overwrite A_ScriptFullPath
+						Run, A_ScriptFullPath
+						ExitApp
+					} else {
+						MsgBox, % "An error has occured while downloading.`nHTTP code: " . WebRequest.Status
+					}
 				} else {
-					MsgBox, % "An error has occured while downloading.`nCode: " . ErrorLevel
+					DownloadURL := "https://api.github.com/repos/" . GitHubUser . "/" . repoName . "/releases?page=1&per_page=" . 1
+
+					WebRequest.Open("GET", DownloadURL, true)
+					AcceptHeader := "application/json;q=1.0,text/plain;q=0.1"
+					WebRequest.SetRequestHeader("Accept", AcceptHeader)
+					try {
+					WebRequest.Send()
+					TimeOut := WebRequest.WaitForResponse(5)
+					} catch HttpErr {
+						Return "WinHttp: " . HttpErr
+					}
+					switch WebRequest.Status {
+						case 200:
+							Release := JSON.Load(WebRequest.ResponseText)
+
+							DownloadURL := Release[1].assets[1].url
+							WebRequest.Open("GET", DownloadURL, true)
+							AcceptHeader := "application/octet-stream;q=1.0,text/plain;q=0.1"
+							WebRequest.SetRequestHeader("Accept", AcceptHeader)
+							WebRequest.Send()
+							TimeOut := WebRequest.WaitForResponse(10)
+							if (TimeOut != "VARIANT_FALSE") {
+								while (WebRequest.Status == 302) { ;redirect
+									DownloadURL := WebRequest.GetResponseHeader("location")
+									WebRequest.Open("GET", DownloadURL, true)
+									AcceptHeader := "application/octet-stream;q=1.0,		text/plain;q=0.1"
+									WebRequest.SetRequestHeader("Accept", AcceptHeader)
+									WebRequest.Send()
+									TimeOut := WebRequest.WaitForResponse(10)
+								}
+
+								if (WebRequest.Status == 200) {
+									OutFile := FileOpen((A_ScriptDir . "\.tmp-" . Release[1].assets[1].name), "w-w", "CP437")
+									ByteArr := WebRequest.ResponseBody
+									Loop % ByteArr.MaxIndex() + 1
+									{
+										OutFile.WriteUChar(ByteArr[A_Index - 1])
+									}
+									OutFile.Close()
+									/* Instead -->
+										DLLCall("OleAut32\SafeArrayAccessData", "Ptr", ComObjValue(WebRequest.ResponseBody), "Ptr*", Data)
+										OutFile.RawWrite(Data, WebRequest.ResponseBody.MaxIndex() -1)
+										DllCall("OleAut32\SafeArrayUnaccessData", "Ptr", ComObjValue(ResponseBody))
+									*/
+
+									FileDelete, A_ScriptFullPath
+									FileMove, (A_ScriptDir . "\.tmp-" . Release[1].assets[1].name), (A_ScriptDir . "\" . Release[1].assets[1].name)
+									Run, % (A_ScriptDir . "\" . Release[1].assets[1].name)
+									ExitApp
+								} else {
+									MsgBox, % "An error has occured while downloading.`nHTTP code: " . WebRequest.Status
+								}
+							} else {
+								MsgBox, % "An error has occured while downloading.`nHTTP timeout."
+							}
+						Default:
+							MsgBox, % "An error has occured while downloading.`nHTTP code: " . WebRequest.Status
+					}
 				}
 			}
 		Case false:
 			MsgBox, % "Already up-to-date!"
 		Default:
+			MsgBox, % "Error while obtaining version!"
 	}
 	Return
 }

@@ -1,4 +1,6 @@
 *.exe
+.tmp-*
 test.json
 nppBackup
 icon/iconsext
+.vscode
