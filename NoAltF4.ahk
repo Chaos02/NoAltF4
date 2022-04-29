@@ -24,13 +24,13 @@ if (A_AHKVersion < "1.1.13") {
 }
 ;@Ahk2Exe-IgnoreEnd
 
-ScriptVersion := "0.9.0rc-2"
+ScriptVersion := "1.0.0rc-3"
 ;@Ahk2Exe-Let U_version = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 ;@Ahk2Exe-SetProductVersion %U_version%
 ;@Ahk2Exe-SetFileVersion %U_version~\D+~.%
 GHUser := "Chaos02"
 ;@Ahk2Exe-Let U_Author = %A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
-;@Ahk2Exe-SetCompanyName U_Author
+;@Ahk2Exe-SetCompanyName %U_Author%
 ;@Ahk2Exe-Obey U_ScriptName, SplitPath`, A_ScriptFullPath`, `, `, `, ScriptName
 ;@Ahk2Exe-SetProductName %U_ScriptName%
 ;@Ahk2Exe-ExeName %U_ScriptName%
